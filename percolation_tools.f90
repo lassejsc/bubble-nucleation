@@ -269,7 +269,7 @@ contains
             current =>cluster%bubblearray(i)%bubble
 
             !If overlap happens at cooridnate zero, make the boundary at L smaller by the amount of overlap
-            if (current%coordinates(1)-current%radius <= 0 ) then
+            if (current%coordinates(1)-current%radius <= 0 ) then !TODO: add not here, and test whether it makes things faster (no other effects)
                 xminperc=.true.
                 do j=1,cluster%count
                     opposite => cluster%bubblearray(j)%bubble
