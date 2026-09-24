@@ -1,11 +1,12 @@
+
 program simu
-    USE percolation_tools
     USE omp_lib
+    USE percolation_tools
     USE,intrinsic :: ISO_FORTRAN_ENV, only : qp => real64
     USE,intrinsic :: ieee_arithmetic
     implicit none
-
-    ! Default seed
+       
+        ! Default seed
     integer, parameter :: defaultsd = 4357
 ! Period parameters
     integer, parameter :: N = 624, N1 = N + 1
@@ -25,7 +26,7 @@ program simu
     integer :: nargs,i
     character(len=10), allocatable :: args(:)
     real(qp) :: pi = 3.141592653589793_qp
-    integer boundary,j
+    integer boundary
     real(qp) :: tau_f,p_f
     
     type(cells),allocatable :: cell(:,:,:)
@@ -33,12 +34,13 @@ program simu
     real(qp) :: p_0,beta,volume,N_f
 
     real(qp) :: r_max,T1,T2
-    integer :: N_bub,N_cells,successes,repeats,N_ff
+    integer :: N_bub,N_cells,successes,repeats,j
     logical :: inside
+    real(qp) :: phi_c
     integer threads
     character(len=20) arg
-    integer :: testing=10
-    real(qp) :: hubble
+
+
     !***********************************************************************!
     ! Get cmd arguments
     ! tau_f          the time to simulate to
@@ -49,9 +51,9 @@ program simu
     !_______________________________________________________________________!
 
     nargs = command_argument_count()
-    if (nargs /= 7) then
+    if (nargs /= 5) then
         call get_command_argument(0,arg)
-        print*,"Usage:",trim(arg)," tau_f p_f boundary repeats threads hubble N_final"
+        print*,"Usage:",trim(arg)," tau_f p_f boundary repeats threads"
         stop
     end if
     allocate(args(nargs))
@@ -59,13 +61,11 @@ program simu
     do i=1,nargs
         call get_command_argument(i,args(i))
     enddo
-    read(args(1),*) tau_f
-    read(args(2),*) p_f
+    read(args(1),*) phi_c
+    read(args(2),*) r_max
     read(args(3),*) boundary
     read(args(4),*) repeats
     read(args(5),*) threads
-    read(args(6),*) hubble
-    read(args(7),*) N_f
     !***********************************************************************!
     ! Generate the bubbles, check for percolation
     ! Parallelized so each thread runs repeats number of simulations
@@ -74,97 +74,104 @@ program simu
 
 
 !    repeats=50
-    !beta=(8.0_qp*pi*p_f)**(1.0_qp/4.0_qp) !ok
+    beta=(8.0_qp*pi*p_f)**(1.0_qp/4.0_qp) !ok
     volume=boundary**3 !ok
- !   N_f=20000
-    N_ff=N_f
-!    N_ff=20000
-
     successes=0
 
-    allocate(bubble_array_deb(3*int(N_f)))    
+
     call omp_set_num_threads(threads)
+    N_f=ceiling(-log(1.0_qp-phi_c)/(4.0_qp/3.0_qp*pi*r_max**(3.0_qp)*boundary**(-3.0_qp)))
+    !print*,"init",N_f
+ !   allocate(bubble_array_deb(2*int(N_f)))    
 
-    !$OMP PARALLEL PRIVATE(bubble_array_deb,r_max,cell,N_f,N_bub,N_cells,seed,mt,mti,test,testing) SHARED(N_ff,boundary,tau_f,p_f,repeats,successes)
 
-    !seed=0
-    !hubble=0.1
-    
+    !$OMP PARALLEL PRIVATE(bubble_array_deb,cell,N_bub,N_cells,boundary,seed,mt,mti) SHARED(repeats,successes,r_max,N_f)
+    allocate(bubble_array_deb(int(N_f)))    
+    read(args(3),*) boundary
+
     call sed(seed,mt,mti)
     do i=1,repeats
+        !print*,N_f
         !print*,seed,omp_get_thread_num()
-        call bubbles(tau_f,p_f,boundary,bubble_array_deb,r_max,cell,N_f,N_bub,N_cells,mt,mti)
-        call find_clusters(bubble_array_deb,boundary,r_max,cell,N_bub,N_cells,successes)
+ 
 
+        !print*,boundary,volume 
+        call bubbles_eq(boundary,bubble_array_deb,cell,N_f,N_bub,N_cells,r_max,mt,mti)
+        !do j=1,N_bub
+        !    print*,bubble_array_deb(j)%bubble%coordinates,bubble_array_deb(j)%bubble%radius
+        !enddo
+        !print*,N_bub
+        !print*,boundary,volume
+        call find_clusters(bubble_array_deb,boundary,r_max,cell,N_bub,N_cells,successes)
+        !print*,boundary,volume
         do j=1,N_bub
-            deallocate(bubble_array_deb(j)%bubble)
+            deallocate(bubble_array_deb(j)%bubble)    
         enddo
+        !deallocate(bubble_array_deb)
         cell(:,:,:)%count=0
     enddo
-
+    !print*,boundary,seed,omp_get_thread_num()
     !$OMP END PARALLEL
-
-    print *,tau_f,successes!/(1.0_qp*repeats*omp_get_max_threads())!,omp_get_thread_num(),omp_get_max_threads()
-
+    !print*,successes
+    print *,phi_c,successes!,omp_get_thread_num(),omp_get_max_threads()
+    !1.0_qp-exp(-N_f*4.0_qp/3.0_qp*pi*r_max**3.0_qp*boundary**(-3.0_qp))
     contains
 
-
-    subroutine bubbles(tau_f,p_0,boundary,bubble_array_deb,r_max,cell,N_f,N_bub,N_cells,mt,mti)
+    
+    subroutine bubbles_eq(boundary,bubble_array_deb,cell,N_f,N_bub,N_cells,r_max,mt,mti)
         type(cells),allocatable :: cell(:,:,:)
         type(bstack),allocatable:: bubble_array_deb(:)
         integer, dimension(0:N-1) :: mt !Had save
         integer                :: mti  
         real(qp) :: tau_f,p_0,beta,volume,N_f
         real(qp) :: tau_initial,tau1,tau2
-        type(bubble), pointer ::neighbor
-        real(qp) :: r_max
+        real(qp) :: r_max,rcell
         real(qp) :: location(4),distance
         integer boundary
         integer :: i
         integer :: N_bub,N_cells
         logical :: inside
         integer :: N_cells_prev
-        integer cell_coord(3),x,y,z,j,k,l,h,limits(3,3),t
-        integer:: seed,io
-        real(qp) :: V_overlap
-        !beta=(8.0_qp*pi*p_0)**(1.0_qp/4.0_qp) !ok
+
 
         N_cells=0
         volume=boundary**3 !ok
         N_bub=0
 
-        !N_f=p_0*volume/beta 
-        N_f=3*hubble**4/(p_0*volume)
-      
-        !tau_initial=ieee_value(1.0_qp,ieee_negative_inf)
-        tau_initial= -1/hubble
+        
+
         !if (.not. allocated(bubble_array_deb)) allocate(bubble_array_deb(2*int(N_f)))
 
-        tau1 = next_nucleation_time(tau_initial,N_f,mt,mti) !First nucleation time  
-        !print *,tau1
-        !r_max=ceiling(2.0_qp/beta*(tau_f-tau1))/2.0_qp !
-        r_max=-tau1
-        !print*,r_max
-        r_max=ceiling((r_max-floor(r_max))*100)+100*floor(r_max)
-        !print*,r_max,"after ceilin"
         !Get the boundary and r_max to be divisible with each other so we get even number of cells
 
-        !print*,mod(boundary*100,int(2.0_qp*r_max)),"mod_preloo"
-        do while(mod(boundary*100,int(2.0_qp*r_max))/=0) 
-            r_max = r_max + 1
-
+        !do while(mod(boundary,2*int(r_max))/=0) 
+        !    boundary=boundary+1
+        !    print*,"uhoh"
+        !enddo
+        !print*, boundary*100
+        !print*, int(2.0_qp*r_max)
+        !print*, mod(boundary*100,int(2.0_qp*r_max))
+        rcell=ceiling((r_max-floor(r_max))*100)+100*floor(r_max)
+        
+        do while(mod(boundary*100,int(2.0_qp*rcell))/=0) 
+            rcell = rcell + 1
+        
             !r_max=ceiling((r_max-floor(r_max))*100)+floor(r_max)*100
            ! print*,r_max, int(2.0_qp*r_max),"r_max,int"
            ! print*,mod(boundary*100,int(2.0_qp*r_max)),r_max,"mod"
-            if (r_max > boundary*100) then
-                r_max=boundary*100
+            if (rcell > boundary*100) then
+                rcell=boundary*100
                 exit
             end if 
         enddo
+
         !print*,"end",r_max,int(2.0_qp*r_max),mod(boundary*100,int(2.0_qp*r_max))
-        r_max=r_max/100.0_qp
+        rcell=rcell/100.0_qp
+        !print*,r_max
         N_cells_prev=N_cells
-        N_cells=int(boundary/(2.0_qp*r_max))
+        N_cells=boundary/(2*int(rcell))
+        !print*,N_cells,int(r_max),r_max
+
         if (N_cells==0) N_cells=1
         if (.not. allocated(cell) .or. N_cells_prev < N_cells) then
             if (allocated(cell)) then
@@ -173,70 +180,18 @@ program simu
             allocate(cell(N_cells,N_cells,N_cells))
         endif
 
-!        print*,r_max,N_cells,1/beta*(tau_f-tau1),2*r_max,boundary/(2*r_max)
-        !print*,boundary,int(2.0_qp*r_max),r_max,1/beta*(tau_f-tau1),(ceiling(2/beta*(tau_f-tau1))),ceiling(2/beta*(tau_f-tau1))/2.0_qp,N_cells,omp_get_thread_num()
-        !First bubble
-        location = get_random_location(boundary,mt,mti) 
-        call add_new_bubble(bubble_array_deb,location,cell,N_bub,r_max,int(N_ff),N_cells)
+        do i=1,int(N_f)
+            location = get_random_location(boundary,mt,mti) 
+            location(4)=r_max
+            call add_new_bubble(bubble_array_deb,location,cell,N_bub,rcell,int(N_f),N_cells)
+        enddo
 
-        do while(tau1 < tau_f)
-            inside = .false.
-            tau2=next_nucleation_time(tau1,N_f,mt,mti) !ok
-            !print*,tau2,N_bub
-
-
-            location=get_random_location(boundary,mt,mti)
-            V_overlap=0
-            do i=1,N_bub 
-
-                bubble_array_deb(i)%bubble%radius=bubble_array_deb(i)%bubble%radius + (tau2-tau1)
-                V_overlap=V_overlap+4*pi/3*(bubble_array_deb(i)%bubble%radius)**3
-            enddo 
-            !print *,tau1,exp(-V_overlap/volume),N_bub!,V_overlap
-            if (exp(-V_overlap/volume)<=1.0e-4_qp) then
-                exit
-            end if
-            !print*,bubble_array_deb(N_bub)%bubble%radius
-
-    !            print*,N_bub
-            cell_coord = floor(location(:3)/(2*r_max))+1
-            limits = search_range(cell_coord,n_cells,.true.) !Limit the search to be within the volume
-            do x=1,3
-                do y=1,3
-                    do z=1,3
-                        j=cell_coord(1)+limits(1,x)
-                        k=cell_coord(2)+limits(2,y)
-                        l=cell_coord(3)+limits(3,z)
-                            do t=1,cell(j,k,l)%count
-                                neighbor=> cell(j,k,l)%bubblearray(t)%bubble  
-                                distance = get_shortest_distance(neighbor%coordinates,location,boundary)
-                                if (distance <= neighbor%radius) then
-                                    inside = .true.
-                                    exit
-                                end if
-                            enddo
-
-                    enddo
-                enddo
-            enddo
-
-            
-            if (.not. inside) then
-                call add_new_bubble(bubble_array_deb,location,cell,N_bub,r_max,int(N_ff),int(N_cells))
-                !print*,tau1,N_bub               
-
-            end if
-            tau1=tau2
-        end do
-        !open(newunit=io,file="coords_expand.dat",status="new",action="write")
         !do i=1,N_bub
-            !print*,bubble_array_deb(i)%bubble%coordinates, bubble_array_deb(i)%bubble%radius
-        !    write(io,*) bubble_array_deb(i)%bubble%coordinates, bubble_array_deb(i)%bubble%radius
+        !    print*,bubble_array_deb(i)%bubble%coordinates, bubble_array_deb(i)%bubble%radius
         !enddo
-        !close(io)
     end subroutine
 
-        subroutine sed(seed,mt,mti)
+    subroutine sed(seed,mt,mti)
         integer seed,un,istat
         integer, dimension(0:N-1) :: mt !Had save
         integer                :: mti  
@@ -254,31 +209,11 @@ program simu
         else
             print*,"Could not access /dev/urandom/"
         endif 
-        seed=1 !Note that the seed is now outside the loop in this and others
+
+        seed=1
         call sgrnd(seed,mt,mti)
-       ! print*,grnd(),seed,omp_get_thread_num()
     end subroutine
 
-    
-
-    function next_nucleation_time(tau1,N_f,mt,mti) result(tau2)
-        real(qp) :: tau1,tau2,N_f,r
-        integer :: seed
-        integer, dimension(0:N-1) :: mt !Had save
-        integer                :: mti  
-        !print*,seed,omp_get_thread_num(),grnd(),"nucleation"
-        
-        r=grnd(mt,mti)
-        !print*,tau1,N_f,log(r)
-        !print*,N_f*log(r)
-        !print *,tau1**(-3.0_qp)+N_f*log(r)
-        tau2=-(abs(tau1**(-3.0_qp)+N_f*log(r)))**(-1/3.0_qp) !Wrong???
-        !print *,"TAU2",tau2
-        if (tau2>0.0_qp) then
-            print*,"Something wrong tau2>0"
-            stop
-        end if
-    end function
 
     function get_random_location(boundary,mt,mti) result(random_location)
         implicit none
