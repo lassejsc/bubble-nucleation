@@ -389,13 +389,13 @@ program simu
             cell_coord = floor(location(:3)/(2*r_max))+1
 
             !Check if new location is inside an existing bubble or not
-                    limits = search_range(cell_coord,n_cells,.false.) !Limit the search to be within the volume
-                    do x=limits(1,1),limits(1,3)
-                        do y=limits(2,1),limits(2,3)
-                            do z=limits(3,1),limits(3,3)
-                                j=cell_coord(1)+x
-                                k=cell_coord(2)+y
-                                l=cell_coord(3)+z
+            limits = search_range(cell_coord,n_cells,.true.) !Limit the search to be within the volume
+            do x=1,3
+                do y=1,3
+                    do z=1,3
+                        j=cell_coord(1)+limits(1,x)
+                        k=cell_coord(2)+limits(2,y)
+                        l=cell_coord(3)+limits(3,z)
                             do t=1,cell(j,k,l)%count
                                 neighbor=> cell(j,k,l)%bubblearray(t)%bubble    
                                 distance = get_shortest_distance(neighbor%coordinates,location,boundary)
