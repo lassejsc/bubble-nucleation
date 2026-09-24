@@ -31,6 +31,149 @@ module percolation_tools
     end type bub_array
 contains
 
+    subroutine add_new_bubble(bubble_array_deb,bubble,cell,N_bub,r_max,N_f,N_cells)
+      !   Subroutine for adding bubbles to bubble_array_deb
+        !   Inputs:
+        !       bubble_array_deb, type(bstack), array for the bubbles
+        !       bubble, real(8) 4-Array, the bubble to be added
+        !       cell, type(cells) 3-Dimensional array, the cells array to be updated
+        !       N_bub, integer, number of bubbles to be updated
+        !       r_max, float, maximal size of a bubble
+        !       N_f, integer, final mean number of bubbles
+        !       N_cells, integer, number of cells in one direction.
+        !_______________________________________________________________________!
+        real(qp) :: bubble(4)
+        type(cells) :: cell(:,:,:)
+        integer :: cell_coords(3)
+        real(qp) :: r_max
+        type(bstack),allocatable :: bubble_array_deb(:)
+        integer :: N_bub,N_f,N_cells
+        N_bub=N_bub+1
+
+        allocate(bubble_array_deb(N_bub)%bubble)
+       
+        bubble_array_deb(N_bub)%bubble%coordinates = bubble(:3)
+        bubble_array_deb(N_bub)%bubble%radius=bubble(4)        
+        bubble_array_deb(N_bub)%bubble%in_stack=.false.
+        bubble_array_deb(N_bub)%bubble%visited_global=.false.
+        cell_coords=floor(bubble(:3)/(2*r_max))+1
+
+        bubble_array_deb(N_bub)%bubble%cell_coordinates=cell_coords
+        !Allocating the cell array if not allocated
+        if (.not. allocated(cell(cell_coords(1),cell_coords(2),cell_coords(3))%bubblearray)) then
+            allocate(cell(cell_coords(1),cell_coords(2),cell_coords(3))%bubblearray(ceiling(3.0_qp*N_f/N_cells)))  !Consumes ton of time
+        endif
+        cell(cell_coords(1),cell_coords(2),cell_coords(3))%count=cell(cell_coords(1),cell_coords(2),cell_coords(3))%count+1
+ 
+        !Update the pointer in the cell%bubblearray which is array of pointers :)
+        cell(cell_coords(1),cell_coords(2),cell_coords(3))%bubblearray(cell(cell_coords(1),cell_coords(2),cell_coords(3))%count)%bubble => bubble_array_deb(N_bub)%bubble
+        
+    end subroutine
+ subroutine find_clusters(bubble_array_deb,boundary,r_max,cell,N_f,N_cells,successes)
+        !***********************************************************************!
+        ! Cluster finding algorithm.
+        ! Inputs are the array of bubbles as type bstack, etc,
+        ! 
+        ! Updates the integer successes if system percolates.
+        !_______________________________________________________________________!
+
+        real(qp) volume
+        integer:: successes
+        real(qp) pi,r
+        integer boundary,i,x,y,z,n_cells,cell_coords(3),j,k,l,N_f,t,cluster_count
+        real(qp) :: random_loc(4),r_max
+        type(cells), allocatable :: cell(:,:,:)
+        type(cells),allocatable :: clusters(:)
+        !The resulting cluster NOTE! the cells type is used here too, but misleading naming but it is just type(bstack) and integer count for number of bubbles
+        type(cells), allocatable :: visited_local  
+        integer :: limits(3,3)
+        type(bstack),allocatable:: bubble_array_deb(:)
+        type(bstack) ,allocatable :: stack(:)
+        type(bubble), pointer :: current_bubble,neighbor
+        integer :: stack_counter
+
+
+        volume = boundary**3
+
+        cluster_count=0
+        if (.not. allocated(stack)) then
+            allocate(stack(3*N_f),clusters(3*N_f))
+            allocate(visited_local)
+            allocate(visited_local%bubblearray(3*N_f))
+        endif
+
+
+       
+        do i=1,N_f
+            if (bubble_array_deb(i)%bubble%visited_global .eqv. .false.) then
+                stack_counter=1
+                stack(stack_counter)%bubble=>bubble_array_deb(i)%bubble !Add first bubble to stack
+                visited_local%count=0
+
+                do while(stack_counter /= 0)
+                    
+                    !Remove from the top of the stack and set as current bubble 
+                    current_bubble => stack(stack_counter)%bubble 
+                    stack_counter=stack_counter-1
+
+                    current_bubble%in_stack = .false.
+                    current_bubble%visited_global=.true.
+
+                    visited_local%count=visited_local%count+1
+                    !Adds current bubble to the visited bubbles which, in the end, is the cluster
+                    visited_local%bubblearray(visited_local%count)%bubble => current_bubble  
+
+
+                    cell_coords=current_bubble%cell_coordinates
+                    limits = search_range(cell_coords,n_cells,.false.) !Limit the search to be within the volume
+                    do x=limits(1,1),limits(1,3)
+                        do y=limits(2,1),limits(2,3)
+                            do z=limits(3,1),limits(3,3)
+                                j=cell_coords(1)+x
+                                k=cell_coords(2)+y
+                                l=cell_coords(3)+z
+
+                                do t=1,cell(j,k,l)%count
+                                    !We check each bubble in each surrounding cell
+
+                                    neighbor=> cell(j,k,l)%bubblearray(t)%bubble    
+                                    if ((.not. neighbor%visited_global) .and. (.not. neighbor%in_stack)) then
+                                        if (norm2(current_bubble%coordinates-neighbor%coordinates) <= current_bubble%radius+neighbor%radius) then
+                                            !If bubbles overlap this executes
+            
+                                            neighbor%in_stack=.true.
+                                            neighbor%visited_global=.true.
+
+                                            stack_counter=stack_counter+1
+                                            stack(stack_counter)%bubble => neighbor
+
+                                        end if
+                                    end if
+                                    
+                                enddo
+
+                            enddo
+                        enddo
+                    enddo
+                enddo 
+    
+                if (percolation_checker(visited_local,boundary)) then
+                    successes=successes+1
+                    !!If one wants to get the percolating cluster, the following loop can be uncommented.
+
+                    !do t=1,visited_local%count
+                    !    print*, visited_local%bubblearray(t)%bubble%coordinates,visited_local%bubblearray(t)%bubble%radius
+                    !end do
+                    
+                    exit
+                endif
+
+            end if
+        enddo
+   
+
+    end subroutine
+
     function search_range(cell_coords,n_cells,wrap) result(limits)
         !***********************************************************************!
         ! function used for limiting the range of cell searched to only the 
