@@ -46,7 +46,7 @@ threads=16
 
 
 repeats=100
-threads=1
+threads=2
 
 p_f=1
 
@@ -111,7 +111,7 @@ print(tau_lower,tau_upper)
 for _ in range(repeat_fork):
     taus = np.linspace(tau_lower,tau_upper,tau_div)
     for tau in taus:
-        os.system(f"./final.o {tau} {p_f} {boundaries[0]} {repeat_step} {threads} >> ./tmp/data_test.dat")
+        os.system(f"../fast_transition_sim.o {tau} {p_f} {boundaries[0]} {repeat_step} {threads} >> ./tmp/data_test.dat")
         # print(os.system("cat ./tmp/data_test.dat"))
     taus, successes = np.loadtxt(f"./tmp/data_test.dat",unpack=True)
     for i,(tau,success) in enumerate(zip(taus,successes)):
