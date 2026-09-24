@@ -1,36 +1,10 @@
 program simu
+    USE percolation_tools
     USE omp_lib
     USE,intrinsic :: ISO_FORTRAN_ENV, only : qp => real64
     USE,intrinsic :: ieee_arithmetic
     implicit none
-    type link 
-        real :: array(4)
-        type(link), pointer :: next
-    end type link
 
-    type bubble
-        real(qp) :: coordinates(3)
-        real(qp) :: radius
-        integer :: cell_coordinates(3)
-        logical :: in_stack=.false.
-        logical :: visited_global=.false.
-        logical :: in_visited_local = .false.
-    end type
-
-    type bstack
-        type(bubble), pointer :: bubble
-    end type bstack
-
-
-    type cells
-        integer :: count=0
-        type(bub_array),allocatable:: bubblearray(:)
-    end type cells
-
-    type bub_array
-        type(bubble),pointer :: bubble
-    end type bub_array
-    
     ! Default seed
     integer, parameter :: defaultsd = 4357
 ! Period parameters
@@ -115,8 +89,9 @@ program simu
 
     !seed=0
     !hubble=0.1
+    
+    call sed(seed,mt,mti)
     do i=1,repeats
-        call sed(seed,mt,mti)
         !print*,seed,omp_get_thread_num()
         call bubbles(tau_f,p_f,boundary,bubble_array_deb,r_max,cell,N_f,N_bub,N_cells,mt,mti)
         call find_clusters(bubble_array_deb,boundary,r_max,cell,N_bub,N_cells,successes)
@@ -132,138 +107,8 @@ program simu
     print *,tau_f,successes!/(1.0_qp*repeats*omp_get_max_threads())!,omp_get_thread_num(),omp_get_max_threads()
 
     contains
-    subroutine find_clusters(bubble_array_deb,boundary,r_max,cel,N_f,N_cells,successes)
-        real(qp) volume
-        integer:: successes
-        real(qp) pi,r
-        integer boundary,i,x,y,z,n_cells,cell_coords(3),j,k,l,N_f,t,cluster_count
-        
-        real(qp) :: random_loc(4),r_max
 
 
-        type(cells), allocatable :: cel(:,:,:)
-
-
-        type(cells),allocatable :: clusters(:)
-        type(cells), allocatable :: visited_local
-
-        integer :: limits(3,2)
-
-        type(bstack),allocatable:: bubble_array_deb(:)
-
-        type(bstack) ,allocatable :: stack(:)
-        type(bubble), pointer :: current_bubble,neighbor
-        integer :: stack_counter
-
-
-        volume = boundary**3
-
-        cluster_count=0
-        if (.not. allocated(stack)) then
-            allocate(stack(3*N_f),clusters(3*N_f))
-            allocate(visited_local)
-            allocate(visited_local%bubblearray(3*N_f))
-        endif
-
-
-       
-        do i=1,N_f
-            if (bubble_array_deb(i)%bubble%visited_global .eqv. .false.) then
-                stack_counter=1
-                stack(stack_counter)%bubble=>bubble_array_deb(i)%bubble
-                visited_local%count=0
-
-                do while(stack_counter /= 0)
-                    
-                    
-                    current_bubble => stack(stack_counter)%bubble
-        
-
-
-                    stack_counter=stack_counter-1
-
-                    current_bubble%in_stack = .false.
-                    current_bubble%in_visited_local=.true. !pointless atm?
-                    current_bubble%visited_global=.true.
-
-                    visited_local%count=visited_local%count+1
-                    visited_local%bubblearray(visited_local%count)%bubble => current_bubble
-
-                    cell_coords=current_bubble%cell_coordinates
-                    limits = search_range(cell_coords,n_cells)
-                    do x=limits(1,1),limits(1,2)
-                        do y=limits(2,1),limits(2,2)
-                            do z=limits(3,1),limits(3,2)
-                                j=cell_coords(1)+x
-                                k=cell_coords(2)+y
-                                l=cell_coords(3)+z
-
-                                do t=1,cel(j,k,l)%count
-                                    
-                                    neighbor=> cel(j,k,l)%bubblearray(t)%bubble    
-                                    if ((.not. neighbor%visited_global) .and. (.not. neighbor%in_stack)) then
-                                        if (norm2(current_bubble%coordinates-neighbor%coordinates) <= current_bubble%radius+neighbor%radius) then
-
-            
-                                            neighbor%in_stack=.true.
-                                            neighbor%visited_global=.true.
-
-                                            stack_counter=stack_counter+1
-                                            stack(stack_counter)%bubble => neighbor
-
-                                        end if
-                                    end if
-                                    
-                                enddo
-
-                            enddo
-                        enddo
-                    enddo
-                    
-                    
-
-
-                enddo 
-    
-                !cluster_count = cluster_count+1
-                !allocate(clusters(cluster_count)%bubblearray(visited_local%count))
-
-                if (percolation_checker(visited_local,boundary)) then
-                    successes=successes+1
-
-                    !do t=1,visited_local%count
-                    !    print*, visited_local%bubblearray(t)%bubble%coordinates,visited_local%bubblearray(t)%bubble%radius
-                    !end do
-                    exit
-
-                endif
-                
-                !clusters(cluster_count)%bubblearray(:visited_local%count)=visited_local%bubblearray(:visited_local%count)
-                !clusters(cluster_count)%count=visited_local%count
-
-            end if
-
-        enddo
-        !print*,cluster_count
-
-
-    end subroutine
-    function search_range(cell_coords,n_cells) result(limits)
-        integer :: cell_coords(3)
-        integer :: n_cells
-        integer :: limits(3,2)
-        integer i
-        limits(:,1)=-1
-        limits(:,2)=1
-        do i=1,3
-            if (cell_coords(i)==1) then
-                limits(i,1)=0
-            endif
-            if (cell_coords(i)==n_cells) then
-                limits(i,2)=0
-            endif
-        enddo 
-    end function
     subroutine bubbles(tau_f,p_0,boundary,bubble_array_deb,r_max,cell,N_f,N_bub,N_cells,mt,mti)
         type(cells),allocatable :: cell(:,:,:)
         type(bstack),allocatable:: bubble_array_deb(:)
@@ -279,7 +124,7 @@ program simu
         integer :: N_bub,N_cells
         logical :: inside
         integer :: N_cells_prev
-        integer cell_coord(3),x,y,z,j,k,l,h,limits(3,2),t
+        integer cell_coord(3),x,y,z,j,k,l,h,limits(3,3),t
         integer:: seed,io
         real(qp) :: V_overlap
         !beta=(8.0_qp*pi*p_0)**(1.0_qp/4.0_qp) !ok
@@ -332,7 +177,7 @@ program simu
         !print*,boundary,int(2.0_qp*r_max),r_max,1/beta*(tau_f-tau1),(ceiling(2/beta*(tau_f-tau1))),ceiling(2/beta*(tau_f-tau1))/2.0_qp,N_cells,omp_get_thread_num()
         !First bubble
         location = get_random_location(boundary,mt,mti) 
-        call add_new_bubble(bubble_array_deb,location,cell,N_bub,r_max,int(N_f),N_cells)
+        call add_new_bubble(bubble_array_deb,location,cell,N_bub,r_max,int(N_ff),N_cells)
 
         do while(tau1 < tau_f)
             inside = .false.
@@ -355,18 +200,16 @@ program simu
 
     !            print*,N_bub
             cell_coord = floor(location(:3)/(2*r_max))+1
-            limits = search_range(cell_coord,n_cells)
-            do x=limits(1,1),limits(1,2)
-                do y=limits(2,1),limits(2,2)
-                    do z=limits(3,1),limits(3,2)
-                        j=cell_coord(1)+x
-                        k=cell_coord(2)+y
-                        l=cell_coord(3)+z
+            limits = search_range(cell_coord,n_cells,.true.) !Limit the search to be within the volume
+            do x=1,3
+                do y=1,3
+                    do z=1,3
+                        j=cell_coord(1)+limits(1,x)
+                        k=cell_coord(2)+limits(2,y)
+                        l=cell_coord(3)+limits(3,z)
                             do t=1,cell(j,k,l)%count
                                 neighbor=> cell(j,k,l)%bubblearray(t)%bubble  
-
                                 distance = get_shortest_distance(neighbor%coordinates,location,boundary)
-                                
                                 if (distance <= neighbor%radius) then
                                     inside = .true.
                                     exit
@@ -379,7 +222,7 @@ program simu
 
             
             if (.not. inside) then
-                call add_new_bubble(bubble_array_deb,location,cell,N_bub,r_max,int(N_f),int(N_cells))
+                call add_new_bubble(bubble_array_deb,location,cell,N_bub,r_max,int(N_ff),int(N_cells))
                 !print*,tau1,N_bub               
 
             end if
@@ -393,115 +236,7 @@ program simu
         !close(io)
     end subroutine
 
-    function percolation_checker(cluster,boundary) result(bool)
-        type(cells),allocatable :: cluster
-        type(bubble), pointer :: current, opposite
-        integer i,j,L,boundary
-        logical bool,xminperc,xmaxperc,yminperc,ymaxperc,zminperc,zmaxperc
-        bool=.false.
-        L=boundary
-        xminperc=.false.
-        xmaxperc=.false.
-        yminperc=.false.
-        ymaxperc=.false.
-        zminperc=.false.
-        zmaxperc=.false. 
-        
-
-
-        do i=1,cluster%count
-            current =>cluster%bubblearray(i)%bubble
-            if (current%coordinates(1)-current%radius <= 0 ) then
-                xminperc=.true.
-                do j=1,cluster%count
-                    opposite => cluster%bubblearray(j)%bubble
-                    if (opposite%coordinates(1)+opposite%radius >= L-(current%radius-current%coordinates(1)) &
-                    .and. get_shortest_distance(opposite%coordinates,current%coordinates, L)<current%radius+opposite%radius) then
-
-                        xmaxperc=.true.
-                        exit
-                    end if
-                enddo
-            end if
-
-            if (current%coordinates(1)+current%radius >= L) then
-                xmaxperc=.true.
-                do j=1,cluster%count
-                    opposite => cluster%bubblearray(j)%bubble
-                    if (opposite%coordinates(1)-opposite%radius <= (current%radius+current%coordinates(1)-L) &
-                    .and. get_shortest_distance(opposite%coordinates,current%coordinates,L)<current%radius+opposite%radius) then
-
-                        xminperc=.true. 
-                        exit
-                    end if
-                enddo
-            end if
-
-
-
-            if (current%coordinates(2)-current%radius <= 0 ) then
-                yminperc=.true.
-                do j=1,cluster%count
-                    opposite => cluster%bubblearray(j)%bubble
-                    if (opposite%coordinates(2)+opposite%radius >= L-(current%radius-current%coordinates(2)) &
-                    .and. get_shortest_distance(opposite%coordinates,current%coordinates,L)<current%radius+opposite%radius) then
-                        ymaxperc=.true.
-                        exit
-                    end if
-                enddo
-            end if
-
-            if (current%coordinates(2)+current%radius >= L ) then
-                ymaxperc=.true.
-                do j=1,cluster%count
-                    opposite => cluster%bubblearray(j)%bubble
-                    if (opposite%coordinates(2)-opposite%radius <= (current%radius+current%coordinates(2)-L) &
-                    .and. get_shortest_distance(opposite%coordinates,current%coordinates,L)<current%radius+opposite%radius) then
-
-                        yminperc=.true. 
-                        exit
-                    end if
-                enddo
-            end if
-
-
-
-            if (current%coordinates(3)-current%radius <= 0 ) then
-                zminperc=.true.
-                do j=1,cluster%count
-                    opposite => cluster%bubblearray(j)%bubble
-                    if (opposite%coordinates(3)+opposite%radius >= L-(current%radius-current%coordinates(3)) &
-                    .and. get_shortest_distance(opposite%coordinates,current%coordinates,L)<current%radius+opposite%radius) then
-                        zmaxperc=.true.
-                        exit
-                    end if
-                enddo
-            end if
-
-            if (current%coordinates(3)+current%radius >= L ) then
-                zmaxperc=.true.
-                
-                do j=1,cluster%count
-                    opposite => cluster%bubblearray(j)%bubble
-                    if (opposite%coordinates(3)-opposite%radius <= (current%radius+current%coordinates(3)-L) &
-                    .and. get_shortest_distance(opposite%coordinates,current%coordinates,L)<current%radius+opposite%radius) then
-                        
-                        zminperc=.true. 
-                        exit
-                    end if
-                enddo
-            end if
-
-            if ((xmaxperc .and. xminperc) .or. (ymaxperc .and. yminperc) .or. (zmaxperc .and. zminperc) ) then
-                 bool=.true.
-                 exit
-            endif
-
-        enddo
-        !Must get distance so it is calcluated to the opposite side not whatever this is
-        
-    end function
-    subroutine sed(seed,mt,mti)
+        subroutine sed(seed,mt,mti)
         integer seed,un,istat
         integer, dimension(0:N-1) :: mt !Had save
         integer                :: mti  
@@ -519,43 +254,12 @@ program simu
         else
             print*,"Could not access /dev/urandom/"
         endif 
-
+        seed=1
         call sgrnd(seed,mt,mti)
        ! print*,grnd(),seed,omp_get_thread_num()
     end subroutine
 
-    subroutine add_new_bubble(bubble_array_deb,bubble,cell,N_bub,r_max,N_f,N_cells)
-        real(qp) :: bubble(4)
-        type(cells) :: cell(:,:,:)
-        integer :: cell_coords(3)
-        real(qp) :: r_max
-        type(bstack),allocatable :: bubble_array_deb(:)
-        integer :: N_bub,N_f,N_cells
-        N_bub=N_bub+1
-
-        !if (.not. associated(bubble_array_deb(N_bub)%bubble)) 
-        allocate(bubble_array_deb(N_bub)%bubble)
-       
-        bubble_array_deb(N_bub)%bubble%coordinates = bubble(:3)
-        bubble_array_deb(N_bub)%bubble%radius=bubble(4)
-        
-        bubble_array_deb(N_bub)%bubble%in_stack=.false.
-        bubble_array_deb(N_bub)%bubble%in_visited_local=.false.
-        bubble_array_deb(N_bub)%bubble%visited_global=.false.
-        !print*,"-----------"
-        !print*,bubble(:3),int(2*r_max),2*r_max,boundary/int(2*r_max),bubble(:3)/(2*r_max)+1
-        cell_coords=floor(bubble(:3)/(2*r_max))+1
-
-        bubble_array_deb(N_bub)%bubble%cell_coordinates=cell_coords
-        if (.not. allocated(cell(cell_coords(1),cell_coords(2),cell_coords(3))%bubblearray)) then
-            allocate(cell(cell_coords(1),cell_coords(2),cell_coords(3))%bubblearray(ceiling(3.0_qp*N_ff/N_cells)))  !Consumes ton of time
-        endif
-        cell(cell_coords(1),cell_coords(2),cell_coords(3))%count=cell(cell_coords(1),cell_coords(2),cell_coords(3))%count+1
-        !print*,cell_coords,N_cells
-        cell(cell_coords(1),cell_coords(2),cell_coords(3))%bubblearray(cell(cell_coords(1),cell_coords(2),cell_coords(3))%count)%bubble => bubble_array_deb(N_bub)%bubble
-        
-    end subroutine
-
+    
 
     function next_nucleation_time(tau1,N_f,mt,mti) result(tau2)
         real(qp) :: tau1,tau2,N_f,r
@@ -594,57 +298,8 @@ program simu
         random_location(4)=0.0_qp
 
     end function
-    real(qp) function get_distance_periodi1c(current_bubble,neighbor,boundary) result(smallest)
-        real(qp) current_bubble(:),neighbor(:),distance(3),dist
-        real(qp) arr(3),prod(26,3)
-        integer boundary,i,j,p,c,k
-        smallest=boundary**2
-        arr(3)=-boundary
-        arr(2)=0
-        arr(1)=boundary
-
-        c=0
-        do i=1,3
-            do j=1,3
-                do p=1,3
-                    if (.not. arr(i)==0 .or. .not. arr(j)==0 .or. .not. arr(p)==0) then
-                        c=c+1
-                        prod(c,1)=arr(i)
-                        prod(c,2)=arr(j)
-                        prod(c,3)=arr(p)
-                        distance=[( abs(current_bubble(k)-neighbor(k)+prod(c,k)), k=1,3 )]
-
-                        dist = (distance(1)**2.0_qp+distance(2)**2.0_qp+distance(3)**2.0_qp)**(1.0_qp/2.0_qp)
-                        if (dist < smallest) then
-                            smallest=dist
-                        endif
-                    endif        
-                enddo 
-            enddo
-        enddo
 
 
-    end function
-    real(qp) function get_shortest_distance(current_bubble,neighbor,boundary) result(dist)
-        implicit none
-        real(qp) current_bubble(:),neighbor(:),distance(3)
-        integer boundary,i
-
-        distance=[( abs(current_bubble(i)-neighbor(i)), i=1,3 )]
- 
-        if (distance(1) > boundary/2.0_qp) then 
-            distance(1) = boundary - distance(1)
-        end if
-        if (distance(2) > boundary/2.0_qp) then
-            distance(2) = boundary - distance(2)
-        end if    
-        if (distance(3) > boundary/2.0_qp) then
-            distance(3) = boundary - distance(3)
-        end if
-
-        dist = (distance(1)**2.0_qp+distance(2)**2.0_qp+distance(3)**2.0_qp)**(1.0_qp/2.0_qp)
-
-    end function
     subroutine sgrnd(seed,mt,mti)
         implicit none
     !   
