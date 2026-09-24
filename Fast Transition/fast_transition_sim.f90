@@ -155,7 +155,7 @@ program simu
         type(cells),allocatable :: clusters(:)
         !The resulting cluster NOTE! the cells type is used here too, but misleading naming but it is just type(bstack) and integer count for number of bubbles
         type(cells), allocatable :: visited_local  
-        integer :: limits(3,2)
+        integer :: limits(3,3)
         type(bstack),allocatable:: bubble_array_deb(:)
         type(bstack) ,allocatable :: stack(:)
         type(bubble), pointer :: current_bubble,neighbor
@@ -194,10 +194,10 @@ program simu
 
 
                     cell_coords=current_bubble%cell_coordinates
-                    limits = search_range(cell_coords,n_cells) !Limit the search to be within the volume
-                    do x=limits(1,1),limits(1,2)
-                        do y=limits(2,1),limits(2,2)
-                            do z=limits(3,1),limits(3,2)
+                    limits = search_range(cell_coords,n_cells,.false.) !Limit the search to be within the volume
+                    do x=limits(1,1),limits(1,3)
+                        do y=limits(2,1),limits(2,3)
+                            do z=limits(3,1),limits(3,3)
                                 j=cell_coords(1)+x
                                 k=cell_coords(2)+y
                                 l=cell_coords(3)+z
@@ -254,7 +254,7 @@ program simu
 
 
 
-    function search_range(cell_coords,n_cells) result(limits)
+    function search_range(cell_coords,n_cells,wrap) result(limits)
         !***********************************************************************!
         ! function used for limiting the range of cell searched to only the 
         ! nearby ones
@@ -265,16 +265,26 @@ program simu
         !_______________________________________________________________________!        
         integer :: cell_coords(3)
         integer :: n_cells
-        integer :: limits(3,2)
+        logical :: wrap
+        integer :: limits(3,3)
         integer i
         limits(:,1)=-1
-        limits(:,2)=1
+        limits(:,2)=0
+        limits(:,3)=1
         do i=1,3
             if (cell_coords(i)==1) then
+              if (.not. wrap) then
                 limits(i,1)=0
+              else 
+                limits(i,1)=n_cells-cell_coords(i) 
+              endif
             endif
             if (cell_coords(i)==n_cells) then
-                limits(i,2)=0
+              if (.not. wrap) then
+                limits(i,3)=0
+              else 
+                limits(i,3)=1-cell_coords(i) 
+              endif
             endif
         enddo 
     end function
@@ -315,7 +325,7 @@ program simu
         integer :: N_bub,N_cells
         logical :: inside
         integer :: N_cells_prev
-        integer cell_coord(3),x,y,z,j,k,l,h,limits(3,2),t
+        integer cell_coord(3),x,y,z,j,k,l,h,limits(3,3),t
         integer:: seed
         beta=(8.0_qp*pi*p_0)**(1.0_qp/4.0_qp) 
 
@@ -379,13 +389,13 @@ program simu
             cell_coord = floor(location(:3)/(2*r_max))+1
 
             !Check if new location is inside an existing bubble or not
-            limits = search_range(cell_coord,n_cells)
-            do x=limits(1,1),limits(1,2)
-                do y=limits(2,1),limits(2,2)
-                    do z=limits(3,1),limits(3,2)
-                        j=cell_coord(1)+x
-                        k=cell_coord(2)+y
-                        l=cell_coord(3)+z
+                    limits = search_range(cell_coord,n_cells,.false.) !Limit the search to be within the volume
+                    do x=limits(1,1),limits(1,3)
+                        do y=limits(2,1),limits(2,3)
+                            do z=limits(3,1),limits(3,3)
+                                j=cell_coord(1)+x
+                                k=cell_coord(2)+y
+                                l=cell_coord(3)+z
                             do t=1,cell(j,k,l)%count
                                 neighbor=> cell(j,k,l)%bubblearray(t)%bubble    
                                 distance = get_shortest_distance(neighbor%coordinates,location,boundary)
@@ -561,6 +571,7 @@ program simu
             print*,"Could not access /dev/urandom/"
         endif 
         seed=test_var
+        seed=1
         call sgrnd(seed,mt,mti)
 
     end subroutine

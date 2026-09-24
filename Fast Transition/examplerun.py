@@ -45,14 +45,14 @@ repeats=1000
 threads=16
 
 
-repeats=1000
-threads=10
+repeats=100
+threads=1
 
 p_f=1
 
 #boundary=30
 #boundaries = np.arange(20,61,10)
-boundaries=[62,67,70]
+boundaries=[30]
 
 
 
@@ -112,7 +112,7 @@ for _ in range(repeat_fork):
     taus = np.linspace(tau_lower,tau_upper,tau_div)
     for tau in taus:
         os.system(f"./final.o {tau} {p_f} {boundaries[0]} {repeat_step} {threads} >> ./tmp/data_test.dat")
-        #print(os.system("cat ./tmp/data.dat"))
+        # print(os.system("cat ./tmp/data_test.dat"))
     taus, successes = np.loadtxt(f"./tmp/data_test.dat",unpack=True)
     for i,(tau,success) in enumerate(zip(taus,successes)):
         if success>successes[i-1]:
@@ -125,11 +125,11 @@ for _ in range(repeat_fork):
     #probabilities = successes/(threads*repeats)
     print(tau_lower,tau_upper)
 
-    os.system("rm ./tmp/data_test.dat")
+    # os.system("rm ./tmp/data_test.dat")
 
 print(f"{time.time()-start}s")
 
-
+exit()
 
 
 taus = np.linspace((tau_lower+tau_upper)/2,1,tau_div)
