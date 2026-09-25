@@ -43,8 +43,8 @@ program simu
 
     !***********************************************************************!
     ! Get cmd arguments
-    ! tau_f          the time to simulate to
-    ! p_f            nucleation rate
+    ! phi            target fractional volume
+    ! r              sphere radius
     ! boundary       volume boundary
     ! repeats        number of repeats
     ! threads        number of threads to run the simulation on
@@ -53,7 +53,7 @@ program simu
     nargs = command_argument_count()
     if (nargs /= 5) then
         call get_command_argument(0,arg)
-        print*,"Usage:",trim(arg)," tau_f p_f boundary repeats threads"
+        print*,"Usage:",trim(arg)," phi r boundary repeats threads"
         stop
     end if
     allocate(args(nargs))
@@ -91,30 +91,15 @@ program simu
 
     call sed(seed,mt,mti)
     do i=1,repeats
-        !print*,N_f
-        !print*,seed,omp_get_thread_num()
- 
-
-        !print*,boundary,volume 
         call bubbles_eq(boundary,bubble_array_deb,cell,N_f,N_bub,N_cells,r_max,mt,mti)
-        !do j=1,N_bub
-        !    print*,bubble_array_deb(j)%bubble%coordinates,bubble_array_deb(j)%bubble%radius
-        !enddo
-        !print*,N_bub
-        !print*,boundary,volume
         call find_clusters(bubble_array_deb,boundary,r_max,cell,N_bub,N_cells,successes)
-        !print*,boundary,volume
         do j=1,N_bub
             deallocate(bubble_array_deb(j)%bubble)    
         enddo
-        !deallocate(bubble_array_deb)
         cell(:,:,:)%count=0
     enddo
-    !print*,boundary,seed,omp_get_thread_num()
     !$OMP END PARALLEL
-    !print*,successes
     print *,phi_c,successes!,omp_get_thread_num(),omp_get_max_threads()
-    !1.0_qp-exp(-N_f*4.0_qp/3.0_qp*pi*r_max**3.0_qp*boundary**(-3.0_qp))
     contains
 
     
@@ -140,37 +125,20 @@ program simu
 
         
 
-        !if (.not. allocated(bubble_array_deb)) allocate(bubble_array_deb(2*int(N_f)))
-
-        !Get the boundary and r_max to be divisible with each other so we get even number of cells
-
-        !do while(mod(boundary,2*int(r_max))/=0) 
-        !    boundary=boundary+1
-        !    print*,"uhoh"
-        !enddo
-        !print*, boundary*100
-        !print*, int(2.0_qp*r_max)
-        !print*, mod(boundary*100,int(2.0_qp*r_max))
         rcell=ceiling((r_max-floor(r_max))*100)+100*floor(r_max)
         
         do while(mod(boundary*100,int(2.0_qp*rcell))/=0) 
             rcell = rcell + 1
         
-            !r_max=ceiling((r_max-floor(r_max))*100)+floor(r_max)*100
-           ! print*,r_max, int(2.0_qp*r_max),"r_max,int"
-           ! print*,mod(boundary*100,int(2.0_qp*r_max)),r_max,"mod"
             if (rcell > boundary*100) then
                 rcell=boundary*100
                 exit
             end if 
         enddo
 
-        !print*,"end",r_max,int(2.0_qp*r_max),mod(boundary*100,int(2.0_qp*r_max))
         rcell=rcell/100.0_qp
-        !print*,r_max
         N_cells_prev=N_cells
         N_cells=boundary/(2*int(rcell))
-        !print*,N_cells,int(r_max),r_max
 
         if (N_cells==0) N_cells=1
         if (.not. allocated(cell) .or. N_cells_prev < N_cells) then
