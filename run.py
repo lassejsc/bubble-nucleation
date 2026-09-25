@@ -259,14 +259,53 @@ if not read_data:
     plt.legend()
     plt.savefig(fname=f"fig_1_{current_time}_{ttype}.png")
     plt.figure(2)
+
 if read_data:
+    
+    def system_call(cmd,live_output=False):
+        with subprocess.Popen(cmd.split(" "),stdout=subprocess.PIPE,stderr=subprocess.PIPE) as proc:
+            if live_output:
+                for line in proc.stdout:
+                    print(str(line,'utf-8').rstrip('\n')) #Note that for example pip's progress bar is not displayed
+
+            out,err = proc.communicate()
+        
+
+        #If errors, raise an exception
+        if proc.returncode!=0:
+            err = str(err,'utf-8')
+            raise RuntimeError(err)
+
+        out = str(out,'utf-8').rstrip('\n')
+        return out
+
     current_time=time.strftime('%d-%h--%H:%M',time.localtime(time.time()))
     tau_crit=[]
     tau_crit_err=[]
     import glob
     dat_files=glob.glob("data_*_*.dat")
     boundaries=[]
+
+
+    repeats=None 
+    threads=None
     for file in dat_files:
+        grep=system_call(f"grep -Po repeat=\\d+ {file}")
+        if repeats and repeats!=int(grep.split("=")[1]):
+            print("Warning: repeats differ between files, check the files. If this is intentional this can be ignored\n\
+           This was noticed for {file}")
+
+        repeats=int(grep.split("=")[1])
+
+        grep=system_call(f"grep -Po threads=\\d+ {file}")
+        if threads and threads!=int(grep.split("=")[1]):
+            print(f"Warning: threads differ between files, check the files. If this is intentional this can be ignored\n\
+            This was noticed for {file}")
+
+        threads=int(grep.split("=")[1])
+        
+
+
         boundary=file.split("_")[1]
         boundaries.append(int(boundary))
         data=np.loadtxt(file)
@@ -276,10 +315,15 @@ if read_data:
 
 
 plt.errorbar(boundaries,tau_crit,yerr=tau_crit_err)
-print(tau_crit_err)
+print("tau error bars",tau_crit_err)
 par,cov = curve_fit(finitescaling,boundaries,tau_crit,sigma=tau_crit_err,absolute_sigma=True)
 b=np.linspace(boundaries[0],boundaries[-1],100)
 plt.plot(b,finitescaling(b,*par),label=f"Fit,err={par[0],np.sqrt(np.diag(cov))[0]}")
+comment = (f"Additional information:\n\
+total_repetitions={threads*repeats}\n\
+Data is stored in the following manner\n\
+critical value,error, boundaries\n")
+np.savetxt(f"test.dat",np.array([[par[0],np.sqrt(np.diag(cov))[0],*boundaries]]),header=f"{comment}")
 ax=plt.gca()
 ax.set_xlabel("L")
 ax.set_ylabel(r"$\phi_c(L)$")
