@@ -94,8 +94,8 @@ program simu
   !Move to first inside loop
 
     !For whatever reason seed = 0 breaks everything. 
+    call sed(seed,mt,mti,test_var)
     do i=1,repeats
-        call sed(seed,mt,mti,test_var)
         !Generates the bubbles into the volume
         call bubbles(tau_f,p_f,boundary,bubble_array_deb,r_max,cell,N_f,N_bub,N_cells,mt,mti)
         !Finds clusters and checks for percolation

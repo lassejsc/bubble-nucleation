@@ -209,8 +209,6 @@ program simu
         else
             print*,"Could not access /dev/urandom/"
         endif 
-
-        seed=1
         call sgrnd(seed,mt,mti)
     end subroutine
 
