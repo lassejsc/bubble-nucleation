@@ -283,7 +283,7 @@ if read_data:
     tau_crit=[]
     tau_crit_err=[]
     import glob
-    dat_files=glob.glob("data_*_*.dat")
+    dat_files=sorted(glob.glob("data_*_*.dat"))
     boundaries=[]
 
 
