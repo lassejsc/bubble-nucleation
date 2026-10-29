@@ -35,7 +35,7 @@ program simu
     integer boundary,j
     real(qp) :: tau_f,p_f
     
-    type(cells),allocatable :: cell(:,:,:)
+    type(cells),allocatable :: cell(:,:,:),largest_bubbles
 
     real(qp) :: p_0,beta,volume,N_f
 
@@ -89,22 +89,24 @@ program simu
     allocate(bubble_array_deb(3*int(N_f)))    
     call omp_set_num_threads(threads)
 
-    !$OMP PARALLEL PRIVATE(bubble_array_deb,r_max,cell,N_f,N_bub,N_cells,seed,mt,mti,test,testing) SHARED(boundary,tau_f,p_f,repeats,successes)
+    !$OMP PARALLEL PRIVATE(bubble_array_deb,largest_bubbles,r_max,cell,N_f,N_bub,N_cells,seed,mt,mti,test,testing) SHARED(boundary,tau_f,p_f,repeats,successes)
 
   !Move to first inside loop
 
     !For whatever reason seed = 0 breaks everything. 
     call sed(seed,mt,mti,test_var)
     do i=1,repeats
+
         !Generates the bubbles into the volume
-        call bubbles(tau_f,p_f,boundary,bubble_array_deb,r_max,cell,N_f,N_bub,N_cells,mt,mti)
+        call bubbles(tau_f,p_f,boundary,bubble_array_deb,largest_bubbles,r_max,cell,N_f,N_bub,N_cells,mt,mti)
         !Finds clusters and checks for percolation
-        call find_clusters(bubble_array_deb,boundary,r_max,cell,N_bub,N_cells,successes)
+        call find_clusters(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_bub,N_cells,successes)
 
         !Deallocate for next repeat
         do j=1,N_bub
             deallocate(bubble_array_deb(j)%bubble)
         enddo
+        largest_bubbles%count=0
         cell(:,:,:)%count=0
     enddo
 
@@ -114,7 +116,7 @@ program simu
 
     contains
    
-    subroutine bubbles(tau_f,p_0,boundary,bubble_array_deb,r_max,cell,N_f,N_bub,N_cells,mt,mti)
+    subroutine bubbles(tau_f,p_0,boundary,bubble_array_deb,largest_bubbles,r_max,cell,N_f,N_bub,N_cells,mt,mti)
         !***********************************************************************!
         ! subroutine for generating the bubbles in a fast transition.
         !
@@ -135,12 +137,12 @@ program simu
         !       
         !       
         !_______________________________________________________________________!
-        type(cells),allocatable :: cell(:,:,:)
+        type(cells),allocatable :: cell(:,:,:),largest_bubbles
         type(bstack),allocatable:: bubble_array_deb(:)
         integer, dimension(0:N-1) :: mt !Had save
         integer                :: mti  
         real(qp) :: tau_f,p_0,beta,volume,N_f
-        real(qp) :: tau_initial,tau1,tau2
+        real(qp) :: tau_initial,tau1,tau2,tau_second_bubble
         type(bubble), pointer ::neighbor
         real(qp) :: r_max
         real(qp) :: location(4),distance
@@ -164,9 +166,9 @@ program simu
         !if (.not. allocated(bubble_array_deb)) allocate(bubble_array_deb(2*int(N_f)))
 
         tau1 = next_nucleation_time(tau_initial,N_f,mt,mti) !First nucleation time  
-
+        
         r_max=1/beta*(tau_f-tau1)
-
+        r_max=ceiling(r_max/2)
         !Get the boundary and r_max to be divisible with each other so we get even number of cells        
         !Not so trivial, we try to minimize the N_cells, this is done by increasing r_max until boundary is divisible by 2*r_max
         !As r_max can be a float, we look at it in order of 10^-3, increasing r_max by one until boundary/(2*r_max) is even.
@@ -183,9 +185,9 @@ program simu
         enddo
 
         r_max=r_max/100.0_qp
-
         N_cells_prev=N_cells
         N_cells=int(boundary/(2.0_qp*r_max))
+        
         if (N_cells==0) N_cells=1 !In the case things fail, for example if the boundary is too small
 
         !The following is for allocating more cells in the case we have more cells in subsequent repetitions
@@ -195,11 +197,13 @@ program simu
             endif
             allocate(cell(N_cells,N_cells,N_cells))
         endif
-
+        if (.not. allocated(largest_bubbles)) then
+          allocate(largest_bubbles)
+        endif
+        
         !Add the first bubble
         location = get_random_location(boundary,mt,mti) 
-        call add_new_bubble(bubble_array_deb,location,cell,N_bub,r_max,int(N_f),N_cells)
-
+        call add_new_bubble(bubble_array_deb,location,cell,largest_bubbles,N_bub,r_max,int(N_f),N_cells,1/beta*(tau_f-tau1)) 
 
         do while(tau1 < tau_f)
             inside = .false.
@@ -213,29 +217,45 @@ program simu
             cell_coord = floor(location(:3)/(2*r_max))+1
 
             !Check if new location is inside an existing bubble or not
-            limits = search_range(cell_coord,n_cells,.true.) !Limit the search to be within the volume
-            do x=1,3
-                do y=1,3
-                    do z=1,3
-                        j=cell_coord(1)+limits(1,x)
-                        k=cell_coord(2)+limits(2,y)
-                        l=cell_coord(3)+limits(3,z)
-                            do t=1,cell(j,k,l)%count
-                                neighbor=> cell(j,k,l)%bubblearray(t)%bubble    
-                                distance = get_shortest_distance(neighbor%coordinates,location,boundary)
-                                if (distance <= neighbor%radius) then
-                                    inside = .true.
-                                    exit
-                                end if
-                            enddo
-
+            !limits = search_range(cell_coord,n_cells,.true.) !Limit the search to be within the volume
+            do x=-1,1 !1,3
+                do y=-1,1
+                    do z=-1,1
+                        if (.not. inside) then
+                        j=modulo(cell_coord(1)-1+x,N_cells)+1
+                        k=modulo(cell_coord(2)-1+y,N_cells)+1
+                        l=modulo(cell_coord(3)-1+z,N_cells)+1
+                        !j=cell_coord(1)+limits(1,x)
+                        !k=cell_coord(2)+limits(2,y)
+                        !l=cell_coord(3)+limits(3,z)
+                        do t=1,largest_bubbles%count
+                          neighbor=>largest_bubbles%bubblearray(t)%bubble 
+                            distance = get_shortest_distance(neighbor%coordinates,location,boundary)
+                            if (distance <= neighbor%radius) then
+                                inside = .true.
+                                exit
+                            end if
+                        enddo
+                        
+                        do t=1,cell(j,k,l)%count
+                            if (inside) then
+                              exit
+                            end if
+                            neighbor=> cell(j,k,l)%bubblearray(t)%bubble    
+                            distance = get_shortest_distance(neighbor%coordinates,location,boundary)
+                            if (distance <= neighbor%radius) then
+                                inside = .true.
+                                exit
+                            end if
+                        enddo
+                        endif
                     enddo
                 enddo
             enddo
 
             
             if (.not. inside) then
-                call add_new_bubble(bubble_array_deb,location,cell,N_bub,r_max,int(N_f),int(N_cells))
+                call add_new_bubble(bubble_array_deb,location,cell,largest_bubbles,N_bub,r_max,int(N_f),int(N_cells),1/beta*(tau_f-tau2))
 
                 !!Following can be used to get number of bubbles as function of tau, useful for comparing against theory.
                 !print*,tau1,N_bub               
@@ -244,11 +264,10 @@ program simu
             tau1=tau2
         end do
         !!If one wants to get all the locations and radii of the bubbles at time tau, the following can be outputted
-
+        !print*,N_bub
         !do i=1,N_bub
         !    print*,bubble_array_deb(i)%bubble%coordinates, bubble_array_deb(i)%bubble%radius
         !enddo
-
     end subroutine
 
     subroutine sed(seed,mt,mti,test_var)
@@ -270,8 +289,7 @@ program simu
         else
             print*,"Could not access /dev/urandom/"
         endif 
-        seed=test_var
-        seed=1
+        !seed=130948
         call sgrnd(seed,mt,mti)
 
     end subroutine

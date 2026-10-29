@@ -29,7 +29,7 @@ program simu
     integer boundary
     real(qp) :: tau_f,p_f
     
-    type(cells),allocatable :: cell(:,:,:)
+    type(cells),allocatable :: cell(:,:,:),largest_bubbles
 
     real(qp) :: p_0,beta,volume,N_f
 
@@ -74,7 +74,7 @@ program simu
 
 
 !    repeats=50
-    beta=(8.0_qp*pi*p_f)**(1.0_qp/4.0_qp) !ok
+    !beta=(8.0_qp*pi*p_f)**(1.0_qp/4.0_qp) !ok
     volume=boundary**3 !ok
     successes=0
 
@@ -83,8 +83,8 @@ program simu
     N_f=ceiling(-log(1.0_qp-phi_c)/(4.0_qp/3.0_qp*pi*r_max**(3.0_qp)*boundary**(-3.0_qp)))
     !print*,"init",N_f
  !   allocate(bubble_array_deb(2*int(N_f)))    
-
-
+    allocate(largest_bubbles)
+    largest_bubbles%count=0
     !$OMP PARALLEL PRIVATE(bubble_array_deb,cell,N_bub,N_cells,boundary,seed,mt,mti) SHARED(repeats,successes,r_max,N_f)
     allocate(bubble_array_deb(int(N_f)))    
     read(args(3),*) boundary
@@ -92,7 +92,7 @@ program simu
     call sed(seed,mt,mti)
     do i=1,repeats
         call bubbles_eq(boundary,bubble_array_deb,cell,N_f,N_bub,N_cells,r_max,mt,mti)
-        call find_clusters(bubble_array_deb,boundary,r_max,cell,N_bub,N_cells,successes)
+        call find_clusters(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_bub,N_cells,successes)
         do j=1,N_bub
             deallocate(bubble_array_deb(j)%bubble)    
         enddo
@@ -126,7 +126,6 @@ program simu
         
 
         rcell=ceiling((r_max-floor(r_max))*100)+100*floor(r_max)
-        
         do while(mod(boundary*100,int(2.0_qp*rcell))/=0) 
             rcell = rcell + 1
         
@@ -138,8 +137,7 @@ program simu
 
         rcell=rcell/100.0_qp
         N_cells_prev=N_cells
-        N_cells=boundary/(2*int(rcell))
-
+        N_cells=int(boundary/(2*rcell))
         if (N_cells==0) N_cells=1
         if (.not. allocated(cell) .or. N_cells_prev < N_cells) then
             if (allocated(cell)) then
@@ -151,7 +149,7 @@ program simu
         do i=1,int(N_f)
             location = get_random_location(boundary,mt,mti) 
             location(4)=r_max
-            call add_new_bubble(bubble_array_deb,location,cell,N_bub,rcell,int(N_f),N_cells)
+            call add_new_bubble(bubble_array_deb,location,cell,largest_bubbles,N_bub,rcell,int(N_f),N_cells,0.0_qp)
         enddo
 
         !do i=1,N_bub
