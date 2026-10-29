@@ -74,7 +74,7 @@ program simu
 
 
 !    repeats=50
-    beta=(8.0_qp*pi*p_f)**(1.0_qp/4.0_qp) !ok
+    !beta=(8.0_qp*pi*p_f)**(1.0_qp/4.0_qp) !ok
     volume=boundary**3 !ok
     successes=0
 
@@ -126,7 +126,6 @@ program simu
         
 
         rcell=ceiling((r_max-floor(r_max))*100)+100*floor(r_max)
-        
         do while(mod(boundary*100,int(2.0_qp*rcell))/=0) 
             rcell = rcell + 1
         
@@ -138,8 +137,7 @@ program simu
 
         rcell=rcell/100.0_qp
         N_cells_prev=N_cells
-        N_cells=boundary/(2*int(rcell))
-
+        N_cells=int(boundary/(2*rcell))
         if (N_cells==0) N_cells=1
         if (.not. allocated(cell) .or. N_cells_prev < N_cells) then
             if (allocated(cell)) then
