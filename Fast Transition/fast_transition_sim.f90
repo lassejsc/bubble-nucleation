@@ -96,15 +96,17 @@ program simu
     !For whatever reason seed = 0 breaks everything. 
     call sed(seed,mt,mti,test_var)
     do i=1,repeats
+
         !Generates the bubbles into the volume
         call bubbles(tau_f,p_f,boundary,bubble_array_deb,largest_bubbles,r_max,cell,N_f,N_bub,N_cells,mt,mti)
         !Finds clusters and checks for percolation
-        !call find_clusters(bubble_array_deb,boundary,r_max,cell,N_bub,N_cells,successes)
+        call find_clusters(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_bub,N_cells,successes)
 
         !Deallocate for next repeat
         do j=1,N_bub
             deallocate(bubble_array_deb(j)%bubble)
         enddo
+        largest_bubbles%count=0
         cell(:,:,:)%count=0
     enddo
 
@@ -260,9 +262,8 @@ program simu
             end if
             tau1=tau2
         end do
-        print*,N_bub
         !!If one wants to get all the locations and radii of the bubbles at time tau, the following can be outputted
-
+        !print*,N_bub
         !do i=1,N_bub
         !    print*,bubble_array_deb(i)%bubble%coordinates, bubble_array_deb(i)%bubble%radius
         !enddo
@@ -287,7 +288,7 @@ program simu
         else
             print*,"Could not access /dev/urandom/"
         endif 
-        ! seed=130948
+        !seed=130948
         call sgrnd(seed,mt,mti)
 
     end subroutine
