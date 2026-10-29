@@ -89,7 +89,7 @@ program simu
     allocate(bubble_array_deb(3*int(N_f)))    
     call omp_set_num_threads(threads)
 
-    !$OMP PARALLEL PRIVATE(bubble_array_deb,r_max,cell,N_f,N_bub,N_cells,seed,mt,mti,test,testing) SHARED(boundary,tau_f,p_f,repeats,successes)
+    !$OMP PARALLEL PRIVATE(bubble_array_deb,largest_bubbles,r_max,cell,N_f,N_bub,N_cells,seed,mt,mti,test,testing) SHARED(boundary,tau_f,p_f,repeats,successes)
 
   !Move to first inside loop
 
