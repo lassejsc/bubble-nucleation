@@ -221,6 +221,7 @@ program simu
             do x=-1,1 !1,3
                 do y=-1,1
                     do z=-1,1
+                        if (.not. inside) then
                         j=modulo(cell_coord(1)-1+x,N_cells)+1
                         k=modulo(cell_coord(2)-1+y,N_cells)+1
                         l=modulo(cell_coord(3)-1+z,N_cells)+1
@@ -234,12 +235,12 @@ program simu
                                 inside = .true.
                                 exit
                             end if
-
-                          !if any(norm2(neighbor%cell_coord-cell_coord>floor(neighbor%radius/r_max))) then
-                              
-                          !endif
                         enddo
+                        
                         do t=1,cell(j,k,l)%count
+                            if (inside) then
+                              exit
+                            end if
                             neighbor=> cell(j,k,l)%bubblearray(t)%bubble    
                             distance = get_shortest_distance(neighbor%coordinates,location,boundary)
                             if (distance <= neighbor%radius) then
@@ -247,7 +248,7 @@ program simu
                                 exit
                             end if
                         enddo
-
+                        endif
                     enddo
                 enddo
             enddo
