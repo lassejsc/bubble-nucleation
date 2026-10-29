@@ -151,18 +151,10 @@ contains
                     if (associated(neighbor,current_bubble)) cycle
                     if (get_shortest_distance(current_bubble%coordinates,neighbor%coordinates,boundary) <= current_bubble%radius+neighbor%radius) then
                       if ((.not. neighbor%visited_global)) then !.and. (.not. neighbor%in_stack)) then
-                        
-                            !If bubbles overlap this executes
                             neighbor%image=current_bubble%image+shift  
-                            
-
-                            ! neighbor%in_stack=.true.
                             neighbor%visited_global=.true.
-                            ! neighbor%visited_local=.true.
-
                             stack_counter=stack_counter+1
                             stack(stack_counter)%bubble => neighbor
-
                       else if (any(current_bubble%image+shift/= neighbor%image)) then
                             !$omp atomic
                             successes=successes+1
