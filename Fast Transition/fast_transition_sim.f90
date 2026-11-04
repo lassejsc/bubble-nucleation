@@ -100,8 +100,8 @@ program simu
         !Generates the bubbles into the volume
         call bubbles(tau_f,p_f,boundary,bubble_array_deb,largest_bubbles,r_max,cell,N_f,N_bub,N_cells,mt,mti)
         !Finds clusters and checks for percolation
-        call find_clusters(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_bub,N_cells,successes)
-
+        !call find_clusters(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_bub,N_cells,successes)
+        call count_collisions(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_bub,N_cells)
         !Deallocate for next repeat
         do j=1,N_bub
             deallocate(bubble_array_deb(j)%bubble)
@@ -112,7 +112,7 @@ program simu
 
     !$OMP END PARALLEL
 
-    print *,tau_f,successes!/(1.0_qp*repeats*omp_get_max_threads())!,omp_get_thread_num(),omp_get_max_threads()
+    print *,"#",tau_f,successes!/(1.0_qp*repeats*omp_get_max_threads())!,omp_get_thread_num(),omp_get_max_threads()
 
     contains
    
@@ -265,9 +265,9 @@ program simu
         end do
         !!If one wants to get all the locations and radii of the bubbles at time tau, the following can be outputted
         !print*,N_bub
-        !do i=1,N_bub
-        !    print*,bubble_array_deb(i)%bubble%coordinates, bubble_array_deb(i)%bubble%radius
-        !enddo
+        do i=1,N_bub
+           print*,bubble_array_deb(i)%bubble%coordinates, bubble_array_deb(i)%bubble%radius
+        enddo
     end subroutine
 
     subroutine sed(seed,mt,mti,test_var)

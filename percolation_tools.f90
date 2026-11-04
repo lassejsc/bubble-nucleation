@@ -82,6 +82,114 @@ contains
         cell(cell_coords(1),cell_coords(2),cell_coords(3))%bubblearray(cell(cell_coords(1),cell_coords(2),cell_coords(3))%count)%bubble => bubble_array_deb(N_bub)%bubble
         
     end subroutine
+ subroutine count_collisions(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_f,N_cells)
+        !***********************************************************************!
+        ! Cluster finding algorithm.
+        ! Inputs are the array of bubbles as type bstack, etc,
+        ! 
+        ! Updates the integer successes if system percolates.
+        !_______________________________________________________________________!
+
+        real(qp) volume
+        integer:: coll_count,coll_count2,coll_count3,cellb
+        real(qp) pi,r
+        integer boundary,i,x,y,z,n_cells,cell_coords(3),j,k,l,N_f,t
+        real(qp) :: random_loc(4),r_max,r_max_max
+        type(cells), allocatable :: cell(:,:,:),largest_bubbles
+        type(cells),allocatable :: clusters(:)
+        !The resulting cluster NOTE! the cells type is used here too, but misleading naming but it is just type(bstack) and integer count for number of bubbles
+        type(cells), allocatable :: visited_local  
+        integer :: limits(3,3),cell_bounds(3,2)
+        type(bstack),allocatable:: bubble_array_deb(:)
+        type(bstack) ,allocatable :: stack(:)
+        type(bubble), pointer :: current_bubble,neighbor
+        integer :: stack_counter,root_indx
+
+        cell_bounds(:,1)=1
+        cell_bounds(:,2)=N_cells
+!        print *,n_cells,boundary
+        volume = boundary**3
+
+        coll_count=0
+        coll_count2=0
+        coll_count3=0
+        if (.not. allocated(stack)) then
+            allocate(stack(3*N_f),clusters(3*N_f))
+            allocate(visited_local)
+            allocate(visited_local%bubblearray(3*N_f))
+        endif
+        r_max_max=0
+        do i=1,N_f
+          if (bubble_array_deb(i)%bubble%radius > r_max .and. r_max > r_max_max) then
+            r_max_max=bubble_array_deb(i)%bubble%radius
+          endif
+        enddo
+        print*,"#rmax",r_max,r_max_max,ceiling(r_max_max/r_max)
+       
+        do i=1,N_f
+                if (bubble_array_deb(i)%bubble%visited_global) cycle
+                stack_counter=1
+                stack(stack_counter)%bubble=>bubble_array_deb(i)%bubble !Add first bubble to stack
+                visited_local%count=0
+                do while(stack_counter /= 0)
+                    !Remove from the top of the stack and set as current bubble 
+                    current_bubble => stack(stack_counter)%bubble 
+                    stack_counter=stack_counter-1
+                    current_bubble%visited_global=.true.
+                    cell_coords=current_bubble%cell_coordinates
+                    if (current_bubble%radius >= r_max) then
+                      cellb=ceiling(r_max_max/r_max)
+                    else
+                      cellb=1
+                    endif
+                    do x=-cellb,cellb
+                      do y=-cellb,cellb
+                        do z=-cellb,cellb
+                                j=modulo(cell_coords(1)-1+x,N_cells)+1
+                                k=modulo(cell_coords(2)-1+y,N_cells)+1
+                                l=modulo(cell_coords(3)-1+z,N_cells)+1
+                                do t=1,cell(j,k,l)%count
+                                    !We check each bubble in each surrounding cell
+                                    neighbor=> cell(j,k,l)%bubblearray(t)%bubble    
+                                    if (associated(neighbor,current_bubble)) cycle
+                                    if (get_shortest_distance(current_bubble%coordinates,neighbor%coordinates,boundary) <= current_bubble%radius+neighbor%radius) then
+                                      if ((.not. neighbor%visited_global)) then !.and. (.not. neighbor%in_stack)) then
+                                            neighbor%visited_global=.true.
+                                            stack_counter=stack_counter+1
+                                            stack(stack_counter)%bubble => neighbor
+                                            print*,"#cell",current_bubble%coordinates,neighbor%coordinates
+                                            coll_count3=coll_count3+1
+                                        endif
+                                    end if
+                                enddo
+                                do t=1,largest_bubbles%count 
+                                    neighbor=>largest_bubbles%bubblearray(t)%bubble
+                                    if (get_shortest_distance(current_bubble%coordinates,neighbor%coordinates,boundary) <= current_bubble%radius+neighbor%radius) then   
+
+                                      if ((.not. neighbor%visited_global)) then !.and. (.not. neighbor%in_stack)) then
+                                        neighbor%visited_global=.true.
+
+                                        stack_counter=stack_counter+1
+                                        stack(stack_counter)%bubble => neighbor
+
+                                            print*,"#largest",current_bubble%coordinates,neighbor%coordinates
+                                        coll_count3=coll_count3+1
+                                      endif
+                                      endif
+                                enddo
+                            enddo
+                        enddo
+                    enddo
+                enddo 
+          !have to reset visited global for when we next look at the system 
+        enddo
+        !Very suboptimal but i dont care
+        do i=1,N_f
+            bubble_array_deb(i)%bubble%visited_global=.false.
+ 
+        enddo 
+        print *,coll_count3
+      end subroutine
 
  subroutine find_clusters(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_f,N_cells,successes)
         !***********************************************************************!
@@ -92,7 +200,7 @@ contains
         !_______________________________________________________________________!
 
         real(qp) volume
-        integer:: successes
+        integer:: successes,cellb
         integer :: shift(3)
         real(qp) pi,r
         integer boundary,i,x,y,z,n_cells,cell_coords(3),j,k,l,N_f,t,cluster_count
@@ -164,14 +272,18 @@ contains
                     
                     enddo
 
-
-                    do x=-1,1
-                      do y=-1,1
-                        do z=-1,1
+                    !Our bubble could be from the largest bubbles => check larger range for neighbors
+                    if (current_bubble%radius >= r_max) then
+                        cellb=ceiling(current_bubble%radius/r_max)
+                    else
+                        cellb=1
+                    endif
+                    do x=-cellb,cellb
+                      do y=-cellb,cellb
+                        do z=-cellb,cellb
                                 j=modulo(cell_coords(1)-1+x,N_cells)+1
                                 k=modulo(cell_coords(2)-1+y,N_cells)+1
                                 l=modulo(cell_coords(3)-1+z,N_cells)+1
-                                 
                                 do t=1,cell(j,k,l)%count
                                     
                                     !We check each bubble in each surrounding cell
