@@ -101,7 +101,7 @@ program simu
         call bubbles(tau_f,p_f,boundary,bubble_array_deb,largest_bubbles,r_max,cell,N_f,N_bub,N_cells,mt,mti)
         !Finds clusters and checks for percolation
         !call find_clusters(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_bub,N_cells,successes)
-        call count_collisions(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_bub,N_cells)
+        !call count_collisions(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_bub,N_cells)
         !Deallocate for next repeat
         do j=1,N_bub
             deallocate(bubble_array_deb(j)%bubble)
@@ -112,7 +112,7 @@ program simu
 
     !$OMP END PARALLEL
 
-    print *,"#",tau_f,successes!/(1.0_qp*repeats*omp_get_max_threads())!,omp_get_thread_num(),omp_get_max_threads()
+    !print *,"#",tau_f,successes!/(1.0_qp*repeats*omp_get_max_threads())!,omp_get_thread_num(),omp_get_max_threads()
 
     contains
    
@@ -148,7 +148,7 @@ program simu
         real(qp) :: location(4),distance
         integer boundary
         integer :: i
-        integer :: N_bub,N_cells
+        integer :: N_bub,N_cells,prev_coll
         logical :: inside
         integer :: N_cells_prev
         integer cell_coord(3),x,y,z,j,k,l,h,limits(3,3),t
@@ -204,7 +204,7 @@ program simu
         !Add the first bubble
         location = get_random_location(boundary,mt,mti) 
         call add_new_bubble(bubble_array_deb,location,cell,largest_bubbles,N_bub,r_max,int(N_f),N_cells,1/beta*(tau_f-tau1)) 
-
+        prev_coll=0
         do while(tau1 < tau_f)
             inside = .false.
             tau2=next_nucleation_time(tau1,N_f,mt,mti) 
@@ -213,11 +213,23 @@ program simu
             !Update the size of all bubbles
             do i=1,N_bub 
                 bubble_array_deb(i)%bubble%radius=bubble_array_deb(i)%bubble%radius + 1.0_qp/beta*(tau2-tau1)
+                bubble_array_deb(i)%bubble%visited_global=.false.
             enddo 
+            
+            prev_coll=count_collisions(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_bub,int(N_cells),tau2,prev_coll)
             cell_coord = floor(location(:3)/(2*r_max))+1
 
             !Check if new location is inside an existing bubble or not
             !limits = search_range(cell_coord,n_cells,.true.) !Limit the search to be within the volume
+            do t=1,largest_bubbles%count
+              neighbor=>largest_bubbles%bubblearray(t)%bubble 
+                distance = get_shortest_distance(neighbor%coordinates,location,boundary)
+                if (distance <= neighbor%radius) then
+                    inside = .true.
+                    exit
+                end if
+            enddo
+
             do x=-1,1 !1,3
                 do y=-1,1
                     do z=-1,1
@@ -228,14 +240,6 @@ program simu
                         !j=cell_coord(1)+limits(1,x)
                         !k=cell_coord(2)+limits(2,y)
                         !l=cell_coord(3)+limits(3,z)
-                        do t=1,largest_bubbles%count
-                          neighbor=>largest_bubbles%bubblearray(t)%bubble 
-                            distance = get_shortest_distance(neighbor%coordinates,location,boundary)
-                            if (distance <= neighbor%radius) then
-                                inside = .true.
-                                exit
-                            end if
-                        enddo
                         
                         do t=1,cell(j,k,l)%count
                             if (inside) then
@@ -256,7 +260,6 @@ program simu
             
             if (.not. inside) then
                 call add_new_bubble(bubble_array_deb,location,cell,largest_bubbles,N_bub,r_max,int(N_f),int(N_cells),1/beta*(tau_f-tau2))
-
                 !!Following can be used to get number of bubbles as function of tau, useful for comparing against theory.
                 !print*,tau1,N_bub               
 
@@ -265,9 +268,17 @@ program simu
         end do
         !!If one wants to get all the locations and radii of the bubbles at time tau, the following can be outputted
         !print*,N_bub
-        do i=1,N_bub
-           print*,bubble_array_deb(i)%bubble%coordinates, bubble_array_deb(i)%bubble%radius
-        enddo
+        !do i=1,N_bub
+           !print*,bubble_array_deb(i)%bubble%coordinates, bubble_array_deb(i)%bubble%radius
+           !following DOESNT work
+            !current_bubble=>bubble_array_deb(i)%bubble
+            !do t=1,N_f
+            !    neighbor=>bubble_array_deb(t)%bubble
+            !    if (get_shortest_distance(current_bubble%coordinates,neighbor%coordinates,boundary) <= current_bubble%radius+neighbor%radius) then   
+            !          coll_count=coll_count+1
+            !    endif
+            !  enddo
+        !enddo
     end subroutine
 
     subroutine sed(seed,mt,mti,test_var)

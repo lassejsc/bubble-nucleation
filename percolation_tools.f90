@@ -69,7 +69,6 @@ contains
 
           largest_bubbles%count=largest_bubbles%count+1 
           largest_bubbles%bubblearray(largest_bubbles%count)%bubble=>bubble_array_deb(N_bub)%bubble
-          return
         endif
         
         !Allocating the cell array if not allocated
@@ -82,7 +81,7 @@ contains
         cell(cell_coords(1),cell_coords(2),cell_coords(3))%bubblearray(cell(cell_coords(1),cell_coords(2),cell_coords(3))%count)%bubble => bubble_array_deb(N_bub)%bubble
         
     end subroutine
- subroutine count_collisions(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_f,N_cells)
+ integer function count_collisions(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_f,N_cells,tau,prev_coll) result(outf)
         !***********************************************************************!
         ! Cluster finding algorithm.
         ! Inputs are the array of bubbles as type bstack, etc,
@@ -91,8 +90,8 @@ contains
         !_______________________________________________________________________!
 
         real(qp) volume
-        integer:: coll_count,coll_count2,coll_count3,cellb
-        real(qp) pi,r
+        integer:: coll_count,cellb,prev_coll
+        real(qp) pi,r,tau
         integer boundary,i,x,y,z,n_cells,cell_coords(3),j,k,l,N_f,t
         real(qp) :: random_loc(4),r_max,r_max_max
         type(cells), allocatable :: cell(:,:,:),largest_bubbles
@@ -100,19 +99,20 @@ contains
         !The resulting cluster NOTE! the cells type is used here too, but misleading naming but it is just type(bstack) and integer count for number of bubbles
         type(cells), allocatable :: visited_local  
         integer :: limits(3,3),cell_bounds(3,2)
+        real(qp) :: weighted_coll
         type(bstack),allocatable:: bubble_array_deb(:)
         type(bstack) ,allocatable :: stack(:)
         type(bubble), pointer :: current_bubble,neighbor
-        integer :: stack_counter,root_indx
+        integer :: stack_counter,root_indx,singular_coll
 
         cell_bounds(:,1)=1
         cell_bounds(:,2)=N_cells
 !        print *,n_cells,boundary
         volume = boundary**3
 
-        coll_count=0
-        coll_count2=0
-        coll_count3=0
+        singular_coll=0
+        weighted_coll=0
+        outf=0
         if (.not. allocated(stack)) then
             allocate(stack(3*N_f),clusters(3*N_f))
             allocate(visited_local)
@@ -124,13 +124,17 @@ contains
             r_max_max=bubble_array_deb(i)%bubble%radius
           endif
         enddo
-        print*,"#rmax",r_max,r_max_max,ceiling(r_max_max/r_max)
-       
+        !This doenst count collisions with in the clusters 
+        !I think I need two step thing, first find clusters, then find collisions with in the cluster, or well connectivity or somethign
+        !
         do i=1,N_f
+                
+                coll_count=0
                 if (bubble_array_deb(i)%bubble%visited_global) cycle
                 stack_counter=1
                 stack(stack_counter)%bubble=>bubble_array_deb(i)%bubble !Add first bubble to stack
                 visited_local%count=0
+
                 do while(stack_counter /= 0)
                     !Remove from the top of the stack and set as current bubble 
                     current_bubble => stack(stack_counter)%bubble 
@@ -138,7 +142,7 @@ contains
                     current_bubble%visited_global=.true.
                     cell_coords=current_bubble%cell_coordinates
                     if (current_bubble%radius >= r_max) then
-                      cellb=ceiling(r_max_max/r_max)
+                      cellb=ceiling(current_bubble%radius/r_max)
                     else
                       cellb=1
                     endif
@@ -148,6 +152,9 @@ contains
                                 j=modulo(cell_coords(1)-1+x,N_cells)+1
                                 k=modulo(cell_coords(2)-1+y,N_cells)+1
                                 l=modulo(cell_coords(3)-1+z,N_cells)+1
+                                if (.not. allocated(cell(j,k,l)%bubblearray)) then
+                                  continue
+                                endif
                                 do t=1,cell(j,k,l)%count
                                     !We check each bubble in each surrounding cell
                                     neighbor=> cell(j,k,l)%bubblearray(t)%bubble    
@@ -156,9 +163,14 @@ contains
                                       if ((.not. neighbor%visited_global)) then !.and. (.not. neighbor%in_stack)) then
                                             neighbor%visited_global=.true.
                                             stack_counter=stack_counter+1
+                                            if (all(neighbor%image==0) .or. all(current_bubble%image==0)) then
+                                              current_bubble%image=current_bubble%image+1
+                                              singular_coll=singular_coll+1 
+                                              !weighted_coll=weighted_coll+current_bubble%radius*neighbor%radius*(current_bubble%radius+neighbor%radius)/abs(current_bubble%radius-neighbor%radius)
+                                            endif
+                                            neighbor%image=neighbor%image+1
+                                            coll_count=coll_count+1
                                             stack(stack_counter)%bubble => neighbor
-                                            print*,"#cell",current_bubble%coordinates,neighbor%coordinates
-                                            coll_count3=coll_count3+1
                                         endif
                                     end if
                                 enddo
@@ -168,12 +180,16 @@ contains
 
                                       if ((.not. neighbor%visited_global)) then !.and. (.not. neighbor%in_stack)) then
                                         neighbor%visited_global=.true.
-
+                                        if (all(neighbor%image==0) .or. all(current_bubble%image==0)) then
+                                          current_bubble%image=current_bubble%image+1
+                                          singular_coll=singular_coll+1 
+                                          !weighted_coll=weighted_coll+current_bubble%radius*neighbor%radius*(current_bubble%radius+neighbor%radius)/abs(current_bubble%radius-neighbor%radius)
+                                        endif
+                                        neighbor%image=neighbor%image+1
+                                        coll_count=coll_count+1
                                         stack_counter=stack_counter+1
                                         stack(stack_counter)%bubble => neighbor
 
-                                            print*,"#largest",current_bubble%coordinates,neighbor%coordinates
-                                        coll_count3=coll_count3+1
                                       endif
                                       endif
                                 enddo
@@ -181,15 +197,21 @@ contains
                         enddo
                     enddo
                 enddo 
+                if (coll_count>0) then
+                  
+                  outf=outf+1
+                endif
           !have to reset visited global for when we next look at the system 
         enddo
         !Very suboptimal but i dont care
-        do i=1,N_f
-            bubble_array_deb(i)%bubble%visited_global=.false.
- 
-        enddo 
-        print *,coll_count3
-      end subroutine
+       
+        !Trying account for merging of clusters, still need to account for formation of new clusters
+        !both of these are collisions but give net zero cluster count
+        !General problem: Singular collisoins are not counted
+        !Outf=collisions between clusters + clusters
+
+        print *,tau,N_f,coll_count,outf,singular_coll+outf,singular_coll
+      end function 
 
  subroutine find_clusters(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_f,N_cells,successes)
         !***********************************************************************!
