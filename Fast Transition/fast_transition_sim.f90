@@ -226,7 +226,7 @@ program simu
                     exit
                 end if
             enddo
-                        
+
             do x=-1,1 !1,3
                 do y=-1,1
                     do z=-1,1
@@ -237,6 +237,7 @@ program simu
                         !j=cell_coord(1)+limits(1,x)
                         !k=cell_coord(2)+limits(2,y)
                         !l=cell_coord(3)+limits(3,z)
+
 
                         do t=1,cell(j,k,l)%count
                             if (inside) then

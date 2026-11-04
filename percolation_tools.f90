@@ -92,7 +92,7 @@ contains
         !_______________________________________________________________________!
 
         real(qp) volume
-        integer:: successes
+        integer:: successes,cellb
         integer :: shift(3)
         real(qp) pi,r
         integer boundary,i,x,y,z,n_cells,cell_coords(3),j,k,l,N_f,t,cluster_count
@@ -164,10 +164,15 @@ contains
                     
                     enddo
 
-
-                    do x=-1,1
-                      do y=-1,1
-                        do z=-1,1
+                    !We could have a bubble from largest_bubbles => extend the cell range
+                    if (current_bubble%radius >= r_max) then
+                        cellb=ceiling(current_bubble%radius/r_max)
+                    else
+                        cellb=1
+                    endif
+                    do x=-cellb,cellb
+                      do y=-cellb,cellb
+                        do z=-cellb,cellb
                                 j=modulo(cell_coords(1)-1+x,N_cells)+1
                                 k=modulo(cell_coords(2)-1+y,N_cells)+1
                                 l=modulo(cell_coords(3)-1+z,N_cells)+1
