@@ -164,12 +164,14 @@ contains
                                             neighbor%visited_global=.true.
                                             stack_counter=stack_counter+1
                                             if (all(neighbor%image==0) .or. all(current_bubble%image==0)) then
-                                              current_bubble%image=current_bubble%image+1
-                                              singular_coll=singular_coll+1 
+                                              current_bubble%image=current_bubble%image+1 !So we dont double count if our current bubble happens to be the new one
+                                              singular_coll=singular_coll+1 !if image is 0 either bubble is a singluar, not part of any cluster 
+                                              
                                               !weighted_coll=weighted_coll+current_bubble%radius*neighbor%radius*(current_bubble%radius+neighbor%radius)/abs(current_bubble%radius-neighbor%radius)
+                                            
                                             endif
-                                            neighbor%image=neighbor%image+1
-                                            coll_count=coll_count+1
+                                            neighbor%image=neighbor%image+1 !neighbor is thus part of a cluster
+                                            coll_count=coll_count+1  !"collisions" as in current bubble does overlap with some bubble => we have a cluster
                                             stack(stack_counter)%bubble => neighbor
                                         endif
                                     end if
@@ -201,16 +203,23 @@ contains
                   
                   outf=outf+1
                 endif
-          !have to reset visited global for when we next look at the system 
+                !have to reset visited global for when we next look at the system (this is done during growing of bubbles) 
         enddo
         !Very suboptimal but i dont care
        
-        !Trying account for merging of clusters, still need to account for formation of new clusters
-        !both of these are collisions but give net zero cluster count
-        !General problem: Singular collisoins are not counted
-        !Outf=collisions between clusters + clusters
 
+        !outf currently is the number of clusters total -> we take out single <-> single and cluster <-> single collisions
+        !this leaves us with just the number already existing clusters that are not formed NOW
+        outf=outf-singular_coll !We double count single <-> single currently?, cluster <-> single is in singular_coll AND single<-->single
+
+        !Now we look at the already existing clusters, if there were more of them at last time step we add the difference aka cluster<-> cluster collisons
+        if (prev_coll>outf) then !this means clusters have merged -> collisions between clusters
+          outf=outf-(prev_coll-outf)
+        endif
+        !Outf becomes prev_coll for next timestep 
+        !We add back the singular_coll to get total
         print *,tau,N_f,coll_count,outf,singular_coll+outf,singular_coll
+
       end function 
 
  subroutine find_clusters(bubble_array_deb,largest_bubbles,boundary,r_max,cell,N_f,N_cells,successes)
